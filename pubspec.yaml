@@ -18,7 +18,7 @@ dependencies:
       ref: master
 
   flutter_widget_from_html: any
-  font_awesome_flutter: any
+  # font_awesome_flutter: any
   skeleton_text: any
 
 dev_dependencies:

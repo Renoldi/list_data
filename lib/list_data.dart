@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+// import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:skeleton_text/skeleton_text.dart';
 
 class ListDataComponent<T> extends StatefulWidget {
@@ -262,7 +262,7 @@ class _ListDataComponentState<T> extends State<ListDataComponent<T>> {
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       Text(widget.showMoreText ?? "Show More"),
-                      const Icon(FontAwesomeIcons.chevronDown, size: 15),
+                      const Icon(Icons.arrow_downward, size: 15),
                     ],
                   ),
                 ),
@@ -555,11 +555,7 @@ class _ListDataComponentState<T> extends State<ListDataComponent<T>> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(
-            FontAwesomeIcons.triangleExclamation,
-            color: Colors.red,
-            size: 50,
-          ),
+          const Icon(Icons.error_outline, color: Colors.red, size: 50),
           const SizedBox(height: 10),
           !(widget.controller?.value.errorMessage ?? "").contains("<div")
               ? Text(
@@ -599,7 +595,7 @@ class _ListDataComponentState<T> extends State<ListDataComponent<T>> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(FontAwesomeIcons.database, size: 50),
+                      const Icon(Icons.storage, size: 50),
                       const SizedBox(height: 10),
                       Text(
                         widget.emptyDataText ?? "No Data",
