@@ -603,6 +603,18 @@ class _ListDataComponentState<T> extends State<ListDataComponent<T>> {
                             widget.emptyDataTextStyle ??
                             Theme.of(context).textTheme.bodyMedium,
                       ),
+                      const SizedBox(height: 10),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          try {
+                            widget.controller?.refresh();
+                          } catch (_) {}
+                        },
+                        icon: const Icon(Icons.refresh),
+                        label: Text(
+                          widget.refreshIntructionText ?? "Try Again",
+                        ),
+                      ),
                       const SizedBox(height: 5),
                       Text(
                         widget.refreshIntructionText ?? "Top here to refresh",
