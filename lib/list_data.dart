@@ -2,6 +2,7 @@ import 'package:error_handling/error_handling.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_widget_from_html/flutter_widget_from_html.dart';
 // import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:skeleton_text/skeleton_text.dart';
@@ -32,8 +33,15 @@ class ListDataComponent<T> extends StatefulWidget {
   final String? showMoreText;
   final String? emptyDataText;
   final String? refreshIntructionText;
+  final Color? refreshColor;
+  final Color? refreshBackgroundColor;
+  final double? refreshDisplacement;
+  final double? refreshEdgeOffset;
   final TextStyle? emptyDataTextStyle;
   final VoidCallback? onUpdated;
+  final bool autoLoad;
+  final bool enableAutoRefreshOnTop;
+  final double autoRefreshTopThreshold;
 
   const ListDataComponent({
     super.key,
@@ -53,10 +61,17 @@ class ListDataComponent<T> extends StatefulWidget {
     this.onWillReceiveDropedData,
     this.dragFeedbackBuilder,
     this.dragDataBuilder,
-    this.enableDrag = true,
+    this.enableDrag = false,
     this.loaderWidget,
     this.loaderCount = 5,
     this.autoSearch = true,
+    this.autoLoad = true,
+    this.enableAutoRefreshOnTop = true,
+    this.autoRefreshTopThreshold = 200.0,
+    this.refreshColor,
+    this.refreshBackgroundColor,
+    this.refreshDisplacement,
+    this.refreshEdgeOffset,
     this.searchStyle,
     this.searchIcon,
     this.showMoreText,
@@ -78,7 +93,23 @@ class _ListDataComponentState<T> extends State<ListDataComponent<T>> {
     widget.controller?.value.onSelected = widget.onSelected;
     widget.controller?.value.onUpdated = widget.onUpdated;
     super.initState();
-    widget.controller?.refresh();
+
+    // Defer any refresh or state change until after the first frame to avoid
+    // calling notifyListeners()/setState() during the build phase.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (widget.autoLoad == true) {
+        widget.controller?.refresh();
+      } else {
+        // If autoLoad is disabled, don't show the initial loading skeleton.
+        // Switch to `loaded` so the empty view is shown and its controls can
+        // trigger loading later.
+        if (widget.controller?.value.state ==
+            ListDataComponentState.firstLoad) {
+          widget.controller?.value.state = ListDataComponentState.loaded;
+          widget.controller?.commit();
+        }
+      }
+    });
   }
 
   @override
@@ -176,30 +207,81 @@ class _ListDataComponentState<T> extends State<ListDataComponent<T>> {
   }
 
   Widget childBuilder() {
+    Future<void> onRefreshHandler() async {
+      try {
+        await widget.controller?.refresh();
+      } catch (_) {}
+    }
+
     switch (widget.controller?.value.state) {
       case ListDataComponentState.firstLoad:
-        return SingleChildScrollView(
-          controller: widget.controller?.value.scrollController,
-          child: Column(
-            children: List.generate(widget.loaderCount!, (index) {
-              return loader();
-            }),
+        return RefreshIndicator(
+          onRefresh: onRefreshHandler,
+          color: widget.refreshColor ?? Theme.of(context).colorScheme.primary,
+          backgroundColor:
+              widget.refreshBackgroundColor ??
+              Theme.of(context).scaffoldBackgroundColor,
+          displacement: widget.refreshDisplacement ?? 40.0,
+          edgeOffset: widget.refreshEdgeOffset ?? 0.0,
+          child: CustomScrollView(
+            controller: widget.controller?.value.scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(widget.loaderCount!, (index) {
+                    return loader();
+                  }),
+                ),
+              ),
+            ],
           ),
         );
       case ListDataComponentState.errorLoaded:
-        return GestureDetector(
-          onTap: widget.controller?.refresh,
-          child: errorLoaded(),
+        return RefreshIndicator(
+          onRefresh: onRefreshHandler,
+          color: widget.refreshColor ?? Theme.of(context).colorScheme.primary,
+          backgroundColor:
+              widget.refreshBackgroundColor ??
+              Theme.of(context).scaffoldBackgroundColor,
+          displacement: widget.refreshDisplacement ?? 40.0,
+          edgeOffset: widget.refreshEdgeOffset ?? 0.0,
+          child: CustomScrollView(
+            controller: widget.controller?.value.scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverFillRemaining(hasScrollBody: false, child: errorLoaded()),
+            ],
+          ),
         );
       default:
-        return (widget.controller?.value.data.length ?? 0) > 0 ||
-                (widget.controller?.value.state ==
-                    ListDataComponentState.loading)
-            ? listModeBuilder()
-            : GestureDetector(
-              onTap: widget.controller?.refresh,
-              child: emptyData(),
-            );
+        final hasData =
+            (widget.controller?.value.data.length ?? 0) > 0 ||
+            (widget.controller?.value.state == ListDataComponentState.loading);
+        Widget content;
+        if (hasData) {
+          content = listModeBuilder();
+        } else {
+          content = CustomScrollView(
+            controller: widget.controller?.value.scrollController,
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverFillRemaining(hasScrollBody: false, child: emptyData()),
+            ],
+          );
+        }
+        return RefreshIndicator(
+          onRefresh: onRefreshHandler,
+          color: widget.refreshColor ?? Theme.of(context).colorScheme.primary,
+          backgroundColor:
+              widget.refreshBackgroundColor ??
+              Theme.of(context).scaffoldBackgroundColor,
+          displacement: widget.refreshDisplacement ?? 40.0,
+          edgeOffset: widget.refreshEdgeOffset ?? 0.0,
+          child: content,
+        );
     }
   }
 
@@ -218,56 +300,60 @@ class _ListDataComponentState<T> extends State<ListDataComponent<T>> {
     List<T> data = List.from(widget.controller?.value.data ?? []);
     return Container(
       color: Colors.transparent,
-      child: Column(
-        children: [
-          Column(
-            children: List.generate(
-              (data.length) +
-                  (widget.controller?.value.state ==
-                          ListDataComponentState.loading
-                      ? widget.loaderCount!
-                      : 0),
-              (index) {
-                if (widget.itemBuilder != null) {
-                  if (index < (data.length)) {
-                    return GestureDetector(
-                      onTap: () {
-                        widget.controller?.value.selected = data[index];
-                        widget.controller?.commit();
-                        if (widget.onSelected != null) {
-                          widget.onSelected!(data[index]);
-                        }
-                      },
-                      child: item(data[index], index),
-                    );
+      child: SingleChildScrollView(
+        controller: widget.controller?.value.scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: Column(
+          children: [
+            Column(
+              children: List.generate(
+                (data.length) +
+                    (widget.controller?.value.state ==
+                            ListDataComponentState.loading
+                        ? widget.loaderCount!
+                        : 0),
+                (index) {
+                  if (widget.itemBuilder != null) {
+                    if (index < (data.length)) {
+                      return GestureDetector(
+                        onTap: () {
+                          widget.controller?.value.selected = data[index];
+                          widget.controller?.commit();
+                          if (widget.onSelected != null) {
+                            widget.onSelected!(data[index]);
+                          }
+                        },
+                        child: item(data[index], index),
+                      );
+                    } else {
+                      return loader();
+                    }
                   } else {
-                    return loader();
+                    return emptyItem();
                   }
-                } else {
-                  return emptyItem();
-                }
-              },
+                },
+              ),
             ),
-          ),
-          widget.enableGetMore != true
-              ? const SizedBox()
-              : Container(
-                margin: const EdgeInsets.only(top: 5),
-                color: Colors.transparent,
-                child: GestureDetector(
-                  onTap: () {
-                    widget.controller?.getOther();
-                  },
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Text(widget.showMoreText ?? "Show More"),
-                      const Icon(Icons.arrow_downward, size: 15),
-                    ],
+            widget.enableGetMore != true
+                ? const SizedBox()
+                : Container(
+                  margin: const EdgeInsets.only(top: 5),
+                  color: Colors.transparent,
+                  child: GestureDetector(
+                    onTap: () {
+                      widget.controller?.getOther();
+                    },
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(widget.showMoreText ?? "Show More"),
+                        const Icon(Icons.arrow_downward, size: 15),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -303,8 +389,11 @@ class _ListDataComponentState<T> extends State<ListDataComponent<T>> {
                         .position
                         .userScrollDirection ==
                     ScrollDirection.forward &&
-                ((current ?? 0) <= (min ?? 0))) {
-              widget.controller?.refresh();
+                ((current ?? 0) <=
+                    (min ?? 0 + widget.autoRefreshTopThreshold))) {
+              if (widget.enableAutoRefreshOnTop == true) {
+                widget.controller?.refresh();
+              }
             } else if (widget
                         .controller
                         ?.value
@@ -385,8 +474,10 @@ class _ListDataComponentState<T> extends State<ListDataComponent<T>> {
                       .position
                       .userScrollDirection ==
                   ScrollDirection.forward &&
-              ((current ?? 0) <= (min ?? 0))) {
-            widget.controller?.refresh();
+              ((current ?? 0) <= (min ?? 0 + widget.autoRefreshTopThreshold))) {
+            if (widget.enableAutoRefreshOnTop == true) {
+              widget.controller?.refresh();
+            }
           } else if (widget
                       .controller
                       ?.value
@@ -440,7 +531,7 @@ class _ListDataComponentState<T> extends State<ListDataComponent<T>> {
         color: Colors.transparent,
         child:
             widget.enableDrag
-                ? Draggable<Object>(
+                ? LongPressDraggable<Object>(
                   dragAnchorStrategy: (drg, obj, offset) {
                     return const Offset(1, 1);
                   },
@@ -588,41 +679,39 @@ class _ListDataComponentState<T> extends State<ListDataComponent<T>> {
               -1,
             );
           } else {
+            // Default empty view: allow caller override via `emptyWidget`.
+            // Otherwise show a minimal, theme-aware circular reload icon.
             return widget.emptyWidget ??
                 Container(
-                  color: Colors.transparent,
                   width: double.infinity,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(Icons.storage, size: 50),
-                      const SizedBox(height: 10),
-                      Text(
-                        widget.emptyDataText ?? "No Data",
-                        style:
-                            widget.emptyDataTextStyle ??
-                            Theme.of(context).textTheme.bodyMedium,
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton.icon(
-                        onPressed: () {
+                  color: Colors.transparent,
+                  child: Center(
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
                           try {
                             widget.controller?.refresh();
                           } catch (_) {}
                         },
-                        icon: const Icon(Icons.refresh),
-                        label: Text(
-                          widget.refreshIntructionText ?? "Try Again",
+                        borderRadius: BorderRadius.circular(40),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary
+                                .withAlpha((0.08 * 255).round()),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.refresh,
+                            color: Theme.of(context).colorScheme.primary,
+                            size: 28,
+                            semanticLabel:
+                                widget.refreshIntructionText ?? 'Refresh',
+                          ),
                         ),
                       ),
-                      const SizedBox(height: 5),
-                      Text(
-                        widget.refreshIntructionText ?? "Top here to refresh",
-                        style:
-                            widget.emptyDataTextStyle ??
-                            Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
+                    ),
                   ),
                 );
           }
@@ -672,32 +761,38 @@ class ListDataComponentController<T>
   }
 
   Future<void> refresh({int? refreshDelayed}) {
+    debugPrint('ListDataComponentController.refresh: start');
     value.state = ListDataComponentState.loading;
     value.data = [];
     commit();
     if (value.dataSource == null) {
+      debugPrint('ListDataComponentController.refresh: no dataSource');
       value.state = ListDataComponentState.loaded;
       commit();
       return Future.value();
     }
+    debugPrint('ListDataComponentController.refresh: calling dataSource...');
     return Future.delayed(
       Duration(seconds: refreshDelayed ?? value.refreshDelayed),
-    ).then((waiting) {
-      value.dataSource!(0, value.searchController.text)
-          .then((datas) {
-            value.data = (datas);
-            if (value.onDataReceived != null) {
-              value.onDataReceived!(datas, value.searchController.text);
-            }
-            value.state = ListDataComponentState.loaded;
-            setSelectedData();
-            commit();
-          })
-          .catchError((onError) {
-            value.state = ListDataComponentState.errorLoaded;
-            value.errorMessage = ErrorHandlingUtil.handleApiError(onError);
-            commit();
-          });
+    ).then((_) async {
+      try {
+        final datas = await value.dataSource!(0, value.searchController.text);
+        debugPrint(
+          'ListDataComponentController.refresh: got ${datas.length} items',
+        );
+        value.data = (datas);
+        if (value.onDataReceived != null) {
+          value.onDataReceived!(datas, value.searchController.text);
+        }
+        value.state = ListDataComponentState.loaded;
+        setSelectedData();
+        commit();
+      } catch (onError) {
+        debugPrint('ListDataComponentController.refresh: error: $onError');
+        value.state = ListDataComponentState.errorLoaded;
+        value.errorMessage = ErrorHandlingUtil.handleApiError(onError);
+        commit();
+      }
     });
   }
 
@@ -706,7 +801,7 @@ class ListDataComponentController<T>
     commit();
   }
 
-  void getOther() {
+  Future<void> getOther() async {
     double latPosition = 0;
     try {
       latPosition = value.scrollController.position.pixels;
@@ -721,33 +816,59 @@ class ListDataComponentController<T>
       commit();
       return;
     }
-    value.dataSource!(total, value.searchController.text)
-        .then((datas) {
-          value.data.addAll(List.from(datas));
-          if (value.onDataReceived != null) {
-            value.onDataReceived!(datas, value.searchController.text);
-          }
-          value.state = ListDataComponentState.loaded;
-          setSelectedData();
-          commit();
-          try {
-            value.scrollController.jumpTo(latPosition);
-          } catch (e) {
-            debugPrint("");
-          }
-        })
-        .catchError((onError) {
-          value.state = ListDataComponentState.errorLoaded;
-          value.errorMessage = ErrorHandlingUtil.handleApiError(onError);
-          commit();
-        });
+    try {
+      debugPrint(
+        'ListDataComponentController.getOther: calling dataSource at offset $total',
+      );
+      final datas = await value.dataSource!(total, value.searchController.text);
+      debugPrint(
+        'ListDataComponentController.getOther: got ${datas.length} items',
+      );
+      value.data.addAll(List.from(datas));
+      if (value.onDataReceived != null) {
+        value.onDataReceived!(datas, value.searchController.text);
+      }
+      value.state = ListDataComponentState.loaded;
+      setSelectedData();
+      commit();
+      try {
+        value.scrollController.jumpTo(latPosition);
+      } catch (e) {
+        debugPrint("");
+      }
+    } catch (onError) {
+      debugPrint('ListDataComponentController.getOther: error: $onError');
+      value.state = ListDataComponentState.errorLoaded;
+      value.errorMessage = ErrorHandlingUtil.handleApiError(onError);
+      commit();
+    }
   }
 
   void setSelectedData() {
+    final previous = value.selected;
+    T? newSelected;
+
     if (value.data.isNotEmpty) {
-      value.selected ??= value.data.first;
+      // Keep previous selection if it still exists in the new data,
+      // otherwise pick the first item.
+      if (previous == null || !value.data.contains(previous)) {
+        newSelected = value.data.first;
+      } else {
+        newSelected = previous;
+      }
+    } else {
+      newSelected = null;
+    }
+
+    // Only notify if selection actually changed.
+    if (previous != newSelected) {
+      value.selected = newSelected;
       if (value.onSelected != null) {
-        value.onSelected!(value.selected);
+        try {
+          value.onSelected!(value.selected);
+        } catch (e) {
+          debugPrint('ListDataComponentController.onSelected error: $e');
+        }
       }
     }
   }
@@ -757,9 +878,28 @@ class ListDataComponentController<T>
   }
 
   void commit() {
-    notifyListeners();
-    if (value.updateWhenEmpty == true || value.data.isNotEmpty) {
-      value.onUpdated?.call();
+    void doNotify() {
+      try {
+        notifyListeners();
+      } catch (e) {
+        debugPrint('ListDataComponentController.notifyListeners error: $e');
+      }
+      if (value.updateWhenEmpty == true || value.data.isNotEmpty) {
+        try {
+          value.onUpdated?.call();
+        } catch (e) {
+          debugPrint('ListDataComponentController.onUpdated error: $e');
+        }
+      }
+    }
+
+    // If we're in the middle of the build phase, defer notifying listeners
+    // until after the frame to avoid calling setState() during build.
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.idle) {
+      doNotify();
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) => doNotify());
     }
   }
 
