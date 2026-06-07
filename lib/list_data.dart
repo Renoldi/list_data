@@ -461,7 +461,7 @@ class _ListDataComponentState<T> extends State<ListDataComponent<T>> {
     return Container(color: Colors.transparent, child: Column(children: item));
   }
 
-  Widget draggable(data, index) {
+  Widget draggable(T? data, int index) {
     return DragTarget<Object>(
       builder: (c, d, w) {
         return Container(
@@ -671,7 +671,7 @@ class ListDataComponentController<T>
     commit();
   }
 
-  Future<void> refresh({refreshDelayed}) {
+  Future<void> refresh({int? refreshDelayed}) {
     value.state = ListDataComponentState.loading;
     value.data = [];
     commit();
