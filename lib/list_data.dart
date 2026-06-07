@@ -758,7 +758,9 @@ class ListDataComponentController<T>
 
   void commit() {
     notifyListeners();
-    value.onUpdated?.call();
+    if (value.updateWhenEmpty == true || value.data.isNotEmpty) {
+      value.onUpdated?.call();
+    }
   }
 
   void startLoading() {
@@ -785,6 +787,7 @@ class ListDataComponentValue<T> {
   ValueChanged2Param<List<T>, String?>? onDataReceived;
   ValueChanged<T?>? onSelected;
   VoidCallback? onUpdated;
+  bool updateWhenEmpty = true;
   String? errorMessage;
   int refreshDelayed = 0;
 }

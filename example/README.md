@@ -14,3 +14,26 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+
+## Demo
+
+Contoh ini menampilkan `ListDataComponent` dari package `list_data`.
+
+- Fitur: kotak pencarian, pemuatan data palsu (async), pagination "show more", dan pemilihan item.
+
+## Menjalankan contoh
+
+1. Buka folder `example`:
+
+```bash
+cd example
+```
+
+2. Ambil dependensi dan jalankan aplikasi di emulator atau perangkat:
+
+```bash
+flutter pub get
+flutter run
+```
+
+Tekan tombol refresh untuk memuat ulang data atau gunakan kotak pencarian untuk menyaring item.
